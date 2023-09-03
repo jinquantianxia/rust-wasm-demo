@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <title>hello wasm</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .btns {
+            width: 100%;
+            height: 45px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="btns">
+        <button id="grey-filter">灰色滤镜</button>
+        <button id="red-filter">红色滤镜</button>
+        <button id="reverse-filter">反向滤镜</button>
+    </div>
+    <h2>原图</h2>
+    <img src="./blue_whale.jpeg">
+    <h2>JS处理</h2>
+    <canvas id="canvas_js"></canvas>
+    <h2>WASM处理</h2>
+    <canvas id="canvas_rs"></canvas>
+</body>
+<script type="module">
+    import init, {
+        add_range,
+        grey_filter,
+        red_filter,
+        reverse_filter
+    } from './pkg/hello_wasm.js';
+
+    window.greyFilter = grey_filter;
+    window.redFilter = red_filter;
+    window.reverseFilter = reverse_filter;
+    const run = async () => {
+        await init();
+
+        // const jsStartTime = new Date().getTime();
+        // console.log('js start time: ', jsStartTime)
+        // const jsSum = addRange(1, 100000000);
+        // const jsEndTime = new Date().getTime();
+        // console.log('js end time: ', jsEndTime);
+        // console.log('jsresult: ', jsSum);
+        // console.log('js calc time: ', jsEndTime - jsStartTime);
+        // const rsStartTime = performance.now(); // 从页面加载到执行该语句之间的时间间隔，是一个衡量值
+        // console.log('rs start time: ', rsStartTime);
+        // const rsSum = add_range(1, 100000000);
+        // const rsEndTime = performance.now();
+        // console.log('rs end time: ', rsEndTime);
+        // console.log('rsresult: ', rsSum);
+        // console.log('rs calc time: ', rsEndTime - rsStartTime);
+    }
+    run();
+
+
+    function addRange(a, b) {
+        let sum = 0;
+        for (let i = a; i < b; i++) {
+            sum += i;
+        }
+        return sum;
+    }
+</script>
+<script>
+    const img = $('img')[0];
+    const jsCanvas = $('#canvas_js')[0];
+    const rsCanvas = $('#canvas_rs')[0];
+    let naturalImgSize = [];
+    let jsCtx;
+    let rsCtx;
+    img.onload = () => {
+        naturalImgSize = [img.naturalWidth, img.naturalHeight];
+        console.log('naturalImgSize>>>', naturalImgSize);
+        jsCtx = jsCanvas.getContext("2d", { willReadFrequently: true });
+        jsCanvas.width = naturalImgSize[0];
+        jsCanvas.height = naturalImgSize[1];
+        jsCtx.drawImage(img, 0, 0);
+
+        rsCtx = rsCanvas.getContext("2d", { willReadFrequently: true });
+        rsCanvas.width = naturalImgSize[0];
+        rsCanvas.height = naturalImgSize[1];
+        rsCtx.drawImage(img, 0, 0);
+    }
+    $('#grey-filter').on('click', () => {
+        jsGreyFilter();
+        rsFilter('grey');
+    });
+
+    $('#red-filter').on('click', () => {
+        jsRedFilter();
+        rsFilter('red');
+    });
+
+    $('#reverse-filter').on('click', () => {
+        jsReverseFilter();
+        rsFilter('reverse');
+    });
+
+    function jsGreyFilter() {
+        //获取imageData
+        const imgData = jsCtx.getImageData(0, 0, naturalImgSize[0], naturalImgSize[1]);
+        const start = new Date().getTime();
+        console.log('js start>>>', start);
+        let newArr = [];
+        const rawArr = imgData.data;
+        const len = rawArr.length;
+        let i = 0;
+        while (i < len) {
+            // 获取rgb均值
+            const average = Math.round((rawArr[i] + rawArr[i + 1] + rawArr[i + 2]) / 3);
+            newArr[i] = newArr[i + 1] = newArr[i + 2] = average;
+            //alpha值统一为255
+            newArr[i + 3] = 255;
+            i += 4;
+        }
+
+        //新建一个imgData对象
+        const newImgData = jsCtx.createImageData(naturalImgSize[0], naturalImgSize[1])
+        //将换算后的数据添加到新的imageData对象里
+        newImgData.data.set(newArr);
+        //将新建的imageData绘制到画布上
+        jsCtx.putImageData(newImgData, 0, 0);
+        const end = new Date().getTime();
+        console.log('js end>>>>>', end);
+        console.log('js spend???', end - start);
+    }
+
+    function rsFilter(type) {
+        //获取imageData
+        const imgRsData = rsCtx.getImageData(0, 0, naturalImgSize[0], naturalImgSize[1]);
+        const arr = imgRsData.data;
+        const rsStart = new Date().getTime();
+        let rsArr = [];
+        console.log('rs start>>>', rsStart);
+        if (type === 'grey') {
+            rsArr = window.greyFilter(arr);
+        } else if (type === 'red') {
+            rsArr = window.redFilter(arr);
+        } else {
+            rsArr = window.reverseFilter(arr);
+        }
+
+        //新建一个imgData对象
+        const newRsImgData = rsCtx.createImageData(naturalImgSize[0], naturalImgSize[1])
+        //将换算后的数据添加到新的imageData对象里
+        newRsImgData.data.set(rsArr);
+        //将新建的imageData绘制到画布上
+        rsCtx.putImageData(newRsImgData, 0, 0);
+        const rsEnd = new Date().getTime();
+        console.log('rs end>>>>>', rsEnd);
+        console.log('rs spend???', rsEnd - rsStart);
+    }
+
+    function jsRedFilter() {
+        //获取imageData
+        const imgData = jsCtx.getImageData(0, 0, naturalImgSize[0], naturalImgSize[1]);
+        const start = new Date().getTime();
+        console.log('js start>>>', start);
+        let newArr = [];
+        const rawArr = imgData.data;
+        const len = rawArr.length;
+        let i = 0;
+        while (i < len) {
+            newArr[i] = rawArr[i]
+            newArr[i + 1] = 0;
+            newArr[i + 2] = 0;
+            //alpha值统一为255
+            newArr[i + 3] = 255;
+            i += 4;
+        }
+
+        //新建一个imgData对象
+        const newImgData = jsCtx.createImageData(naturalImgSize[0], naturalImgSize[1])
+        //将换算后的数据添加到新的imageData对象里
+        newImgData.data.set(newArr);
+        //将新建的imageData绘制到画布上
+        jsCtx.putImageData(newImgData, 0, 0);
+        const end = new Date().getTime();
+        console.log('js end>>>>>', end);
+        console.log('js spend???', end - start);
+    }
+
+    function jsReverseFilter() {
+        //获取imageData
+        const imgData = jsCtx.getImageData(0, 0, naturalImgSize[0], naturalImgSize[1]);
+        const start = new Date().getTime();
+        console.log('js start>>>', start);
+        let newArr = [];
+        const rawArr = imgData.data;
+        const len = rawArr.length;
+        let i = 0;
+        while (i < len) {
+            newArr[i] = 255 - rawArr[i];
+            newArr[i + 1] = 255 - rawArr[i + 1];
+            newArr[i + 2] = 255 - rawArr[i + 2];
+            //alpha值统一为255
+            newArr[i + 3] = 255;
+            i += 4;
+        }
+
+        //新建一个imgData对象
+        const newImgData = jsCtx.createImageData(naturalImgSize[0], naturalImgSize[1])
+        //将换算后的数据添加到新的imageData对象里
+        newImgData.data.set(newArr);
+        //将新建的imageData绘制到画布上
+        jsCtx.putImageData(newImgData, 0, 0);
+        const end = new Date().getTime();
+        console.log('js end>>>>>', end);
+        console.log('js spend???', end - start);
+    }
+
+</script>
+
+</html>
